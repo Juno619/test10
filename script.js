@@ -21,6 +21,165 @@ const STATE = {
   utterance: null
 };
 
+/* ── 百度AI 配置 ── */
+const BAIDU_CONFIG = {
+  apiKey: 'ccmlhESgyokUFIEQrMRcICOW',
+  secretKey: 'txvn5fAlkpEt9HRpLplEmr26zy1QOjQR',
+  accessToken: null,
+  tokenExpiry: 0
+};
+
+/* 食材关键词 → 食材对象的映射表 */
+const INGREDIENT_MAP = {
+  // 主食类
+  '米饭': { emoji: '🍚', urgency: 'medium' },
+  '面条': { emoji: '🍝', urgency: 'medium' },
+  '馒头': { emoji: '🥟', urgency: 'low' },
+  '面包': { emoji: '🍞', urgency: 'high' },
+  '饺子': { emoji: '🥟', urgency: 'low' },
+  '饼':   { emoji: '🫓', urgency: 'medium' },
+  '粥':   { emoji: '🥣', urgency: 'medium' },
+  '粉':   { emoji: '🍜', urgency: 'medium' },
+
+  // 蔬菜类
+  '番茄':   { emoji: '🍅', urgency: 'high' },
+  '西红柿': { emoji: '🍅', urgency: 'high' },
+  '鸡蛋':   { emoji: '🥚', urgency: 'medium' },
+  '土豆':   { emoji: '🥔', urgency: 'low' },
+  '洋葱':   { emoji: '🧅', urgency: 'low' },
+  '胡萝卜': { emoji: '🥕', urgency: 'low' },
+  '青菜':   { emoji: '🥬', urgency: 'high' },
+  '白菜':   { emoji: '🥬', urgency: 'medium' },
+  '菠菜':   { emoji: '🥬', urgency: 'high' },
+  '黄瓜':   { emoji: '🥒', urgency: 'medium' },
+  '辣椒':   { emoji: '🌶️', urgency: 'low' },
+  '玉米':   { emoji: '🌽', urgency: 'low' },
+  '蘑菇':   { emoji: '🍄', urgency: 'medium' },
+  '西兰花': { emoji: '🥦', urgency: 'medium' },
+  '花菜':   { emoji: '🥦', urgency: 'medium' },
+  '茄子':   { emoji: '🍆', urgency: 'medium' },
+  '豆腐':   { emoji: '🫘', urgency: 'high' },
+
+  // 肉类
+  '猪肉': { emoji: '🥩', urgency: 'high' },
+  '牛肉': { emoji: '🥩', urgency: 'high' },
+  '羊肉': { emoji: '🥩', urgency: 'high' },
+  '鸡肉': { emoji: '🍗', urgency: 'high' },
+  '鸭肉': { emoji: '🍗', urgency: 'high' },
+  '排骨': { emoji: '🍖', urgency: 'medium' },
+  '香肠': { emoji: '🌭', urgency: 'medium' },
+  '培根': { emoji: '🥓', urgency: 'medium' },
+  '午餐肉': { emoji: '🥫', urgency: 'medium' },
+  '火腿':   { emoji: '🥓', urgency: 'medium' },
+
+  // 海鲜
+  '鱼':   { emoji: '🐟', urgency: 'high' },
+  '虾':   { emoji: '🦐', urgency: 'high' },
+  '蟹':   { emoji: '🦀', urgency: 'high' },
+  '贝':   { emoji: '🦪', urgency: 'high' },
+
+  // 水果
+  '苹果': { emoji: '🍎', urgency: 'low' },
+  '香蕉': { emoji: '🍌', urgency: 'high' },
+  '橘子': { emoji: '🍊', urgency: 'medium' },
+  '橙子': { emoji: '🍊', urgency: 'medium' },
+  '葡萄': { emoji: '🍇', urgency: 'high' },
+  '草莓': { emoji: '🍓', urgency: 'high' },
+  '西瓜': { emoji: '🍉', urgency: 'high' },
+  '芒果': { emoji: '🥭', urgency: 'medium' },
+  '柠檬': { emoji: '🍋', urgency: 'low' },
+  '桃子': { emoji: '🍑', urgency: 'high' },
+  '梨':   { emoji: '🍐', urgency: 'medium' },
+
+  // 调味/其他
+  '奶酪': { emoji: '🧀', urgency: 'low' },
+  '牛奶': { emoji: '🥛', urgency: 'high' },
+  '酸奶': { emoji: '🥛', urgency: 'medium' },
+  '黄油': { emoji: '🧈', urgency: 'low' },
+  '酱油': { emoji: '🫙', urgency: 'low' },
+};
+
+/**
+ * 根据百度AI关键词匹配食材
+ */
+function matchIngredient(keyword) {
+  // 精确匹配
+  if (INGREDIENT_MAP[keyword]) {
+    return { ...INGREDIENT_MAP[keyword], name: keyword, amount: '适量' };
+  }
+  // 模糊匹配：看关键词是否包含映射表中的食材名
+  for (const [name, info] of Object.entries(INGREDIENT_MAP)) {
+    if (keyword.includes(name) || name.includes(keyword)) {
+      return { ...info, name: keyword, amount: '适量' };
+    }
+  }
+  // 未匹配到的默认
+  return { emoji: '🥄', name: keyword, amount: '适量', urgency: 'low' };
+}
+
+/**
+ * 获取百度AI access_token（缓存30天）
+ */
+async function getBaiduToken() {
+  const now = Date.now();
+  if (BAIDU_CONFIG.accessToken && now < BAIDU_CONFIG.tokenExpiry) {
+    return BAIDU_CONFIG.accessToken;
+  }
+
+  const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${BAIDU_CONFIG.apiKey}&client_secret=${BAIDU_CONFIG.secretKey}`;
+
+  try {
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+    if (data.access_token) {
+      BAIDU_CONFIG.accessToken = data.access_token;
+      BAIDU_CONFIG.tokenExpiry = now + (data.expires_in || 2592000) * 1000;
+      console.log('[百度AI] Token 获取成功，有效期至', new Date(BAIDU_CONFIG.tokenExpiry));
+      return data.access_token;
+    }
+    throw new Error(data.error_description || 'Token获取失败');
+  } catch (e) {
+    console.error('[百度AI] Token获取失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 调用百度AI通用物体识别
+ * @param {string} imageBase64 - 不含头部的纯base64
+ * @returns {Promise<Array>} 识别结果 [{keyword, score}]
+ */
+async function baiduRecognize(imageBase64) {
+  const token = await getBaiduToken();
+  if (!token) return null;
+
+  const url = `https://aip.baidubce.com/rest/2.0/image-classify/v2/advanced_general?access_token=${token}`;
+  const formData = new URLSearchParams();
+  formData.append('image', imageBase64);
+  formData.append('baike_num', '0');
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString()
+    });
+    const data = await resp.json();
+    if (data.error_code) {
+      console.error('[百度AI] 识别错误:', data.error_msg);
+      return null;
+    }
+    console.log('[百度AI] 识别结果:', data.result_num, '个物体');
+    return (data.result || []).map(r => ({
+      keyword: r.keyword,
+      score: r.score
+    }));
+  } catch (e) {
+    console.error('[百度AI] 识别请求失败:', e);
+    return null;
+  }
+}
+
 /* ── 徽章数据 ── */
 const ALL_BADGES = [
   { id: 'first_scan',    icon: '📷', name: '初次扫描',       desc: '第一次上传剩菜照片', earned: false },
@@ -150,15 +309,18 @@ function initFileInput() {
       img.src = evt.target.result;
       img.style.display = 'block';
       if (placeholder) placeholder.style.display = 'none';
-      startAiScan();
+      // 提取纯base64（去掉 data:image/...;base64, 前缀）
+      const base64 = evt.target.result.split(',')[1];
+      startAiScan(base64);
     };
     reader.readAsDataURL(file);
   });
 }
 
 /* ── AI扫描流程 ── */
-function startAiScan() {
+function startAiScan(imageBase64) {
   const loading = document.getElementById('aiLoading');
+  const loadingText = document.getElementById('aiLoadingText');
   if (loading) loading.style.display = 'block';
 
   const msgs = [
@@ -166,19 +328,68 @@ function startAiScan() {
     '正在分析成分结构，计算紧急度...',
     '识别完成！整理结构化报告中...'
   ];
-  let i = 0;
-  const textEl = document.getElementById('aiLoadingText');
-  const interval = setInterval(() => {
-    if (textEl && msgs[i]) textEl.textContent = msgs[i++];
-    if (i >= msgs.length) {
-      clearInterval(interval);
+
+  if (imageBase64) {
+    // ─── 真实API模式 ───
+    let msgIdx = 0;
+    if (loadingText) loadingText.textContent = msgs[0];
+
+    const msgInterval = setInterval(() => {
+      msgIdx++;
+      if (msgIdx < msgs.length - 1 && loadingText) {
+        loadingText.textContent = msgs[msgIdx];
+      }
+    }, 1200);
+
+    baiduRecognize(imageBase64).then(results => {
+      clearInterval(msgInterval);
+      if (loadingText) loadingText.textContent = msgs[msgs.length - 1];
+
+      setTimeout(() => {
+        if (loading) loading.style.display = 'none';
+
+        if (results && results.length > 0) {
+          // 过滤低置信度结果（<15%）并只取前8个
+          const filtered = results
+            .filter(r => r.score > 0.15)
+            .slice(0, 8);
+
+          if (filtered.length > 0) {
+            const ingredients = filtered.map(r => matchIngredient(r.keyword));
+            showIngredientResults(ingredients);
+            addScore(50, '扫描食材');
+            return;
+          }
+        }
+
+        // API无结果或失败，降级到演示数据
+        showIngredientResults(DEMO_INGREDIENTS);
+        addScore(30, '扫描食材（演示）');
+      }, 600);
+    }).catch(() => {
+      // API异常，降级
+      clearInterval(msgInterval);
       setTimeout(() => {
         if (loading) loading.style.display = 'none';
         showIngredientResults(DEMO_INGREDIENTS);
-        addScore(50, '扫描食材');
-      }, 800);
-    }
-  }, 1000);
+        addScore(30, '扫描食材（演示）');
+      }, 1500);
+    });
+  } else {
+    // ─── 演示模式（无图片） ───
+    let i = 0;
+    const interval = setInterval(() => {
+      if (loadingText && msgs[i]) loadingText.textContent = msgs[i++];
+      if (i >= msgs.length) {
+        clearInterval(interval);
+        setTimeout(() => {
+          if (loading) loading.style.display = 'none';
+          showIngredientResults(DEMO_INGREDIENTS);
+          addScore(50, '扫描食材');
+        }, 800);
+      }
+    }, 1000);
+  }
 }
 
 /* ── 演示数据入口 ── */
@@ -191,7 +402,7 @@ function useDemoData() {
     placeholder.innerHTML = '<div style="font-size:3rem">🥡🥚🍅🥩</div><p class="camera-text">演示食材已加载</p>';
   }
 
-  startAiScan();
+  startAiScan();  // 无参数=演示模式
 }
 
 /* ── 展示食材标签 ── */

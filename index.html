@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🍽️ 冰箱大作战</title>
+  <meta name="description" content="把减少食物浪费做成像素RPG冒险：扫描剩菜、生成食谱、语音指导、获得成就！">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ████ 悬浮经验条 ████ -->
+  <div class="exp-bar-wrapper" id="expBarWrapper">
+    <div class="exp-bar-inner">
+      <span class="exp-label">⭐ 剩菜能量</span>
+      <div class="exp-track">
+        <div class="exp-fill" id="expFill" style="width:34%"></div>
+        <div class="exp-pixels"></div>
+      </div>
+      <span class="exp-num" id="expNum">1280 / 3000</span>
+    </div>
+  </div>
+
+  <!-- ████ 1. 顶部状态栏 ████ -->
+  <header class="game-header">
+    <div class="pixel-marquee">
+      <span>⚡ 暗黑料理评级机构严重警告 · 后果自负 ⚡ &nbsp;&nbsp;· · ·&nbsp;&nbsp; ⚡ 暗黑料理评级机构严重警告 · 后果自负 ⚡ &nbsp;&nbsp;· · ·&nbsp;&nbsp;</span>
+    </div>
+
+    <div class="header-main">
+      <!-- 左：玩家信息 -->
+      <div class="player-info pixel-panel">
+        <div class="player-avatar" id="playerAvatar">🧑‍🍳</div>
+        <div class="player-details">
+          <span class="player-name" id="playerName">游客厨师</span>
+          <span class="player-title" id="playerTitle">剩菜学徒</span>
+        </div>
+        <button class="pixel-btn-small" onclick="toggleGuestMode()">切换</button>
+      </div>
+
+      <!-- 中：标题 -->
+      <div class="game-title-area">
+        <div class="pixel-title-deco">🍽️</div>
+        <h1 class="game-title">冰箱大作战</h1>
+        <div class="game-chapter" id="gameChapter">· 第 <span id="chapterNum">1</span> 关 ·</div>
+      </div>
+
+      <!-- 右：积分 -->
+      <div class="score-panel pixel-panel" id="scorePanelTop">
+        <div class="score-main">
+          <span class="score-icon">⭐</span>
+          <div>
+            <span class="score-label">剩菜能量</span>
+            <span class="score-value" id="scoreDisplay">1280</span>
+          </div>
+        </div>
+        <button class="pixel-btn-small accent-btn" onclick="openBadgeWall()">徽章墙 🏅</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ████ 徽章墙弹窗 ████ -->
+  <div class="modal-overlay" id="badgeModal" style="display:none">
+    <div class="pixel-modal">
+      <div class="modal-header">
+        <span>🏅 成就徽章墙</span>
+        <button class="pixel-btn-small" onclick="closeBadgeWall()">✕ 关闭</button>
+      </div>
+      <div class="badge-grid" id="badgeGrid">
+        <!-- JS生成 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ████ 升级动画弹窗 ████ -->
+  <div class="level-up-overlay" id="levelUpOverlay" style="display:none">
+    <div class="level-up-box">
+      <div class="level-up-stars">✨✨✨</div>
+      <div class="level-up-text">LEVEL UP!</div>
+      <div class="level-up-title" id="levelUpTitle">剩菜学徒 → 暗黑厨神</div>
+      <div class="level-up-stars">✨✨✨</div>
+    </div>
+  </div>
+
+  <main class="game-main">
+
+    <!-- ████ 2. 剩菜扫描区 ████ -->
+    <section class="game-section" id="scanSection">
+      <div class="section-sign">
+        <div class="sign-inner">
+          <span class="sign-icon">📷</span>
+          <span>剩菜扫描站</span>
+        </div>
+      </div>
+
+      <div class="scan-card pixel-card polaroid-card">
+        <div class="polaroid-frame">
+          <div class="polaroid-inner" id="polaroidInner">
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <div class="camera-icon-big">📸</div>
+              <p class="camera-text">拍下你的剩菜库存</p>
+              <p class="camera-sub">支持实时拍照 & 相册上传</p>
+            </div>
+            <img id="previewImage" class="preview-img" style="display:none" alt="剩菜预览">
+          </div>
+        </div>
+
+        <div class="scan-actions">
+          <input id="fileInput" type="file" accept="image/*" hidden>
+          <button class="pixel-btn primary-btn" onclick="document.getElementById('fileInput').click()">
+            <span class="btn-icon">📷</span> 实时拍照
+          </button>
+          <button class="pixel-btn primary-btn" onclick="document.getElementById('fileInput').click()">
+            <span class="btn-icon">🖼️</span> 相册上传
+          </button>
+          <button class="pixel-btn secondary-btn" onclick="useDemoData()">
+            <span class="btn-icon">🎮</span> 使用演示数据
+          </button>
+        </div>
+
+        <!-- AI识别加载动画 -->
+        <div class="ai-loading" id="aiLoading" style="display:none">
+          <div class="ai-loading-icon">👨‍🍳</div>
+          <p class="ai-loading-text" id="aiLoadingText">AI 大厨正在瞪大眼珠识别食材...</p>
+          <div class="pixel-progress">
+            <div class="pixel-progress-fill" id="aiProgressFill"></div>
+          </div>
+        </div>
+
+        <!-- 识别结果标签区 -->
+        <div class="ingredient-result" id="ingredientResult" style="display:none">
+          <div class="result-header">
+            <span class="result-title">🔍 识别结果</span>
+            <button class="pixel-btn-small" onclick="addIngredient()">+ 手动添加</button>
+          </div>
+          <div class="ingredient-tags" id="ingredientTags">
+            <!-- JS生成标签 -->
+          </div>
+          <div class="scan-confirm">
+            <button class="pixel-btn primary-btn big-btn pulse-btn" onclick="startRecipeGeneration()">
+              ✨ 开始生成食谱大作战！
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ████ 3. 食谱推荐区 ████ -->
+    <section class="game-section" id="recipeSection" style="display:none">
+      <div class="section-sign">
+        <div class="sign-inner">
+          <span class="sign-icon">🍳</span>
+          <span>食谱大作战</span>
+        </div>
+      </div>
+
+      <div class="recipe-grid" id="recipeGrid">
+        <!-- JS 动态生成三张食谱卡 -->
+      </div>
+    </section>
+
+    <!-- ████ 4. 语音指导模块 ████ -->
+    <section class="game-section" id="voiceSection" style="display:none">
+      <div class="section-sign">
+        <div class="sign-inner">
+          <span class="sign-icon">🎧</span>
+          <span>沉浸式烹饪助手</span>
+        </div>
+      </div>
+
+      <div class="voice-card pixel-card">
+        <div class="voice-wave-bg">
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+        </div>
+
+        <div class="voice-content">
+          <div class="voice-recipe-title" id="voiceRecipeTitle">请先选择一道食谱</div>
+          <div class="voice-step-display">
+            <div class="step-num-badge" id="stepNumBadge">步骤 1</div>
+            <p class="current-step-text" id="currentStepText">选择食谱后，点击「播放」开始沉浸式语音烹饪指导</p>
+          </div>
+
+          <div class="voice-controls">
+            <button class="voice-ctrl-btn" onclick="prevStep()" title="上一步">⏮</button>
+            <button class="voice-ctrl-btn play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+            <button class="voice-ctrl-btn" onclick="nextStep()" title="下一步">⏭</button>
+            <button class="voice-ctrl-btn repeat-btn" onclick="repeatStep()" title="重复">🔁</button>
+          </div>
+
+          <div class="voice-speed-row">
+            <span>语速：</span>
+            <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="0.9" class="pixel-range">
+            <span id="speedLabel">0.9x</span>
+          </div>
+
+          <div class="step-progress-dots" id="stepDots">
+            <!-- JS生成 -->
+          </div>
+        </div>
+
+        <!-- 胜利彩蛋 -->
+        <div class="victory-egg" id="victoryEgg" style="display:none">
+          <div class="victory-text">🎉 恭喜！你没有炸掉厨房！</div>
+          <div class="victory-sub">成功完成所有步骤，厨房安全撤离！</div>
+          <button class="pixel-btn primary-btn" onclick="showCompareSection()">📸 上传成品对比</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ████ 5. 成品对比区 ████ -->
+    <section class="game-section" id="compareSection" style="display:none">
+      <div class="section-sign">
+        <div class="sign-inner">
+          <span class="sign-icon">⚖️</span>
+          <span>胜负判定台</span>
+        </div>
+      </div>
+
+      <div class="compare-card pixel-card">
+        <div class="compare-split">
+          <div class="compare-side">
+            <div class="compare-label ai-label">🤖 AI 预期</div>
+            <div class="compare-img-frame" id="aiExpectedFrame">
+              <div class="img-placeholder">食谱示意图</div>
+            </div>
+          </div>
+          <div class="compare-vs">VS</div>
+          <div class="compare-side">
+            <div class="compare-label user-label">👤 你的成品</div>
+            <div class="compare-img-frame" id="userResultFrame">
+              <input id="compareFileInput" type="file" accept="image/*" hidden>
+              <button class="pixel-btn secondary-btn" onclick="document.getElementById('compareFileInput').click()">
+                📤 上传成品照片
+              </button>
+              <img id="compareImage" style="display:none" alt="成品预览">
+            </div>
+          </div>
+        </div>
+
+        <div class="verdict-area" id="verdictArea" style="display:none">
+          <div class="verdict-score-bar">
+            <div class="verdict-fill" id="verdictFill"></div>
+          </div>
+          <div class="verdict-text" id="verdictText">神还原！大师，请收下我的膝盖！</div>
+          <div class="verdict-sub" id="verdictSub">拯救浪费：<strong id="savedGrams">380g</strong> · 获得积分 +<strong id="earnedScore">380</strong></div>
+          <button class="pixel-btn primary-btn" onclick="generateShareCard()">📸 生成对比炫耀卡</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ████ 6. 成就分享区 ████ -->
+    <section class="game-section" id="achieveSection">
+      <div class="section-sign">
+        <div class="sign-inner">
+          <span class="sign-icon">🏆</span>
+          <span>英雄成就殿堂</span>
+        </div>
+      </div>
+
+      <div class="achieve-layout">
+        <!-- 徽章展示 -->
+        <div class="achieve-badges pixel-card">
+          <div class="achieve-title">🎖️ 我的徽章</div>
+          <div class="badge-row" id="badgeRow">
+            <!-- JS生成 -->
+          </div>
+          <div class="daily-reward-box pixel-panel">
+            <span class="daily-icon">🎁</span>
+            <div>
+              <strong>日清奖励宝箱</strong>
+              <p>今日首次完成任意食谱可领取！</p>
+            </div>
+            <button class="pixel-btn-small accent-btn" onclick="claimDailyReward()">领取</button>
+          </div>
+        </div>
+
+        <!-- 分享 & 排行 -->
+        <div class="achieve-social pixel-card">
+          <div class="achieve-title">🎉 分享英雄时刻</div>
+          <div class="share-preview-box" id="sharePreview">
+            <canvas id="achievementCanvas" width="600" height="400"></canvas>
+          </div>
+          <div class="share-actions">
+            <button class="pixel-btn primary-btn" onclick="generateShareCard()">🃏 生成炫耀卡</button>
+            <button class="pixel-btn accent-btn" onclick="shareToSocial('wechat')">💚 微信分享</button>
+            <button class="pixel-btn accent-btn" onclick="shareToSocial('xiaohongshu')">📕 小红书</button>
+          </div>
+          <div class="first-share-tip">首次分享可获得双倍积分！</div>
+
+          <!-- 排行榜 -->
+          <div class="leaderboard">
+            <div class="lb-tabs">
+              <button class="lb-tab active" onclick="switchLB('week')">周榜</button>
+              <button class="lb-tab" onclick="switchLB('friends')">好友榜</button>
+            </div>
+            <div class="lb-list" id="lbList">
+              <!-- JS生成 -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ████ 7. 底部导航 ████ -->
+  <footer class="pixel-footer">
+    <nav class="bottom-nav">
+      <a class="nav-item active" href="#scanSection" onclick="setNav(this, 'scan')">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">主页</span>
+      </a>
+      <a class="nav-item" href="#" onclick="openRecipeBook(event)">
+        <span class="nav-icon">🗂️</span>
+        <span class="nav-label">菜谱本</span>
+      </a>
+      <a class="nav-item" href="#achieveSection" onclick="setNav(this, 'achieve')">
+        <span class="nav-icon">🏆</span>
+        <span class="nav-label">成就殿堂</span>
+      </a>
+      <a class="nav-item" href="#" onclick="openSettings(event)">
+        <span class="nav-icon">👤</span>
+        <span class="nav-label">个人设置</span>
+      </a>
+    </nav>
+    <div class="footer-random">
+      <button class="pixel-btn accent-btn wide-btn" onclick="randomDarkChallenge()">
+        🎲 随机暗黑挑战！
+      </button>
+      <p class="footer-tip">无剩菜可拍？系统随机生成无厘头暗黑任务</p>
+    </div>
+    <div class="footer-copy">
+      <span>冰箱大作战 · Fridge Quest v2.0 · © 2026</span>
+    </div>
+  </footer>
+
+  <!-- ████ 8. 悬浮激励组件 ████ -->
+  <!-- 剩菜倒计时彩蛋（假设3天未使用） -->
+  <div class="leftover-ghost" id="leftoverGhost" style="display:none">
+    <div class="ghost-bubble">
+      <div class="ghost-char" id="ghostChar">🥺</div>
+      <div class="ghost-text">我快坏了，快来救我！</div>
+      <button class="pixel-btn-small" onclick="dismissGhost()">去救它！</button>
+    </div>
+  </div>
+
+  <!-- 菜谱本弹窗 -->
+  <div class="modal-overlay" id="recipeBookModal" style="display:none">
+    <div class="pixel-modal wide-modal">
+      <div class="modal-header">
+        <span>🗂️ 我的菜谱本</span>
+        <button class="pixel-btn-small" onclick="document.getElementById('recipeBookModal').style.display='none'">✕</button>
+      </div>
+      <div id="recipeBookList" class="recipe-book-list">
+        <!-- JS生成历史记录 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="modal-overlay" id="settingsModal" style="display:none">
+    <div class="pixel-modal">
+      <div class="modal-header">
+        <span>👤 个人设置</span>
+        <button class="pixel-btn-small" onclick="document.getElementById('settingsModal').style.display='none'">✕</button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-row">
+          <label>语速偏好</label>
+          <input type="range" min="0.5" max="2" step="0.1" value="0.9" id="globalSpeedRange">
+        </div>
+        <div class="setting-row">
+          <label>玩家昵称</label>
+          <input type="text" id="nickInput" placeholder="游客厨师" class="pixel-input">
+        </div>
+        <div class="setting-row">
+          <label>游客模式</label>
+          <button class="pixel-btn secondary-btn" onclick="toggleGuestMode()">迁移账户</button>
+        </div>
+        <button class="pixel-btn primary-btn" onclick="saveSettings()">💾 保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

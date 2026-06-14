@@ -1518,6 +1518,29 @@ h1,h2,h3,h4,p,ul,ol { margin: 0; padding: 0; }
 
 .pixel-input:focus { border-color: var(--yellow); }
 
+/* API 配置区 */
+.settings-divider {
+  margin: 8px 0;
+  text-align: center;
+  border-bottom: 1px solid var(--wood-dark);
+  line-height: 0;
+}
+.divider-label {
+  background: var(--panel);
+  color: var(--cyan);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0 10px;
+}
+.api-status-text {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.api-status-text.success { color: var(--green); }
+.api-status-text.error   { color: var(--red); }
+.api-status-text.testing { color: var(--yellow); }
+
 .recipe-book-list {
   display: flex;
   flex-direction: column;

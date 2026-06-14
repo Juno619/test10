@@ -22,9 +22,14 @@ const STATE = {
 };
 
 /* ── 百度AI 配置 ── */
-const BAIDU_CONFIG = {
+const BAIDU_DEFAULTS = {
   apiKey: 'ccmlhESgyokUFIEQrMRcICOW',
-  secretKey: 'txvn5fAlkpEt9HRpLplEmr26zy1QOjQR',
+  secretKey: 'txvn5fAlkpEt9HRpLplEmr26zy1QOjQR'
+};
+
+const BAIDU_CONFIG = {
+  apiKey: localStorage.getItem('baidu_api_key') || BAIDU_DEFAULTS.apiKey,
+  secretKey: localStorage.getItem('baidu_secret_key') || BAIDU_DEFAULTS.secretKey,
   accessToken: null,
   tokenExpiry: 0
 };
@@ -1001,6 +1006,13 @@ function openSettings(e) {
   if (e) e.preventDefault();
   const modal = document.getElementById('settingsModal');
   if (modal) modal.style.display = 'flex';
+
+  // 回填已保存的API密钥
+  const apiInput = document.getElementById('apiKeyInput');
+  const secretInput = document.getElementById('secretKeyInput');
+  if (apiInput) apiInput.value = BAIDU_CONFIG.apiKey;
+  if (secretInput) secretInput.value = BAIDU_CONFIG.secretKey;
+  updateApiStatus();
 }
 
 function saveSettings() {
@@ -1009,9 +1021,105 @@ function saveSettings() {
     const nameEl = document.getElementById('playerName');
     if (nameEl) nameEl.textContent = nickInput.value;
   }
+
+  // 保存API密钥
+  const apiInput = document.getElementById('apiKeyInput');
+  const secretInput = document.getElementById('secretKeyInput');
+  if (apiInput && apiInput.value.trim()) {
+    localStorage.setItem('baidu_api_key', apiInput.value.trim());
+    BAIDU_CONFIG.apiKey = apiInput.value.trim();
+  } else {
+    localStorage.removeItem('baidu_api_key');
+    BAIDU_CONFIG.apiKey = BAIDU_DEFAULTS.apiKey;
+  }
+  if (secretInput && secretInput.value.trim()) {
+    localStorage.setItem('baidu_secret_key', secretInput.value.trim());
+    BAIDU_CONFIG.secretKey = secretInput.value.trim();
+  } else {
+    localStorage.removeItem('baidu_secret_key');
+    BAIDU_CONFIG.secretKey = BAIDU_DEFAULTS.secretKey;
+  }
+
+  // 清除旧的 token（密钥变更后需要重新获取）
+  BAIDU_CONFIG.accessToken = null;
+  BAIDU_CONFIG.tokenExpiry = 0;
+
   const modal = document.getElementById('settingsModal');
   if (modal) modal.style.display = 'none';
   showToast('✅ 设置已保存');
+}
+
+/* ── API密钥可视切换 ── */
+function toggleApiKeyVisibility(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.type = (input.type === 'password') ? 'text' : 'password';
+}
+
+/* ── 测试API连接 ── */
+async function testApiConnection() {
+  const apiInput = document.getElementById('apiKeyInput');
+  const secretInput = document.getElementById('secretKeyInput');
+  const statusEl = document.getElementById('apiStatusText');
+
+  const apiKey = (apiInput && apiInput.value.trim()) || BAIDU_DEFAULTS.apiKey;
+  const secretKey = (secretInput && secretInput.value.trim()) || BAIDU_DEFAULTS.secretKey;
+
+  if (statusEl) {
+    statusEl.textContent = '⏳ 正在测试连接...';
+    statusEl.className = 'api-status-text testing';
+  }
+
+  try {
+    const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
+    const resp = await fetch(url, { method: 'POST' });
+    const data = await resp.json();
+
+    if (data.access_token) {
+      if (statusEl) {
+        statusEl.textContent = '✅ 连接成功！API 密钥有效';
+        statusEl.className = 'api-status-text success';
+      }
+      showToast('✅ 百度AI连接成功！');
+    } else {
+      throw new Error(data.error_description || '认证失败');
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = '❌ 连接失败：' + (e.message || '未知错误');
+      statusEl.className = 'api-status-text error';
+    }
+    showToast('❌ 连接失败，请检查密钥');
+  }
+}
+
+/* ── 清除密钥（恢复默认） ── */
+function clearApiKeys() {
+  localStorage.removeItem('baidu_api_key');
+  localStorage.removeItem('baidu_secret_key');
+  BAIDU_CONFIG.apiKey = BAIDU_DEFAULTS.apiKey;
+  BAIDU_CONFIG.secretKey = BAIDU_DEFAULTS.secretKey;
+  BAIDU_CONFIG.accessToken = null;
+  BAIDU_CONFIG.tokenExpiry = 0;
+
+  const apiInput = document.getElementById('apiKeyInput');
+  const secretInput = document.getElementById('secretKeyInput');
+  if (apiInput) apiInput.value = '';
+  if (secretInput) secretInput.value = '';
+
+  document.getElementById('apiStatusText').textContent = '已恢复默认密钥';
+  document.getElementById('apiStatusText').className = 'api-status-text';
+  showToast('🗑️ 密钥已清除，恢复默认');
+}
+
+/* ── 更新API状态提示 ── */
+function updateApiStatus() {
+  const statusEl = document.getElementById('apiStatusText');
+  if (!statusEl) return;
+  const apiInput = document.getElementById('apiKeyInput');
+  const hasCustom = apiInput && apiInput.value.trim() && apiInput.value.trim() !== BAIDU_DEFAULTS.apiKey;
+  statusEl.textContent = hasCustom ? '🔐 使用自定义密钥' : '📋 使用默认密钥（可在此替换为你自己的）';
+  statusEl.className = 'api-status-text';
 }
 
 /* ── 游客模式 ── */

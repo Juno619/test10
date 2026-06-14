@@ -34,6 +34,24 @@ const BAIDU_CONFIG = {
   tokenExpiry: 0
 };
 
+/* ── 阿里云 API 配置 ── */
+const ALICLOUD_DEFAULTS = {
+  dashscopeKey: 'sk-ws-H.REIHPLR.VK4e.MEUCIFxftJ6gThfgnPyOeeBigpBPDxUoO6ycvRPgcNA6f_gGAiEAsUXzVaLUbUQeBLKNCwQKm81bLBxVCzONXA9Qr7W9QWA',
+  dashscopeModel: 'qwen-vl-plus',
+  visionAk: '',
+  visionSk: ''
+};
+
+const ALICLOUD_CONFIG = {
+  dashscopeKey: localStorage.getItem('ali_dashscope_key') || ALICLOUD_DEFAULTS.dashscopeKey,
+  dashscopeModel: localStorage.getItem('ali_dashscope_model') || ALICLOUD_DEFAULTS.dashscopeModel,
+  visionAk: localStorage.getItem('ali_vision_ak') || '',
+  visionSk: localStorage.getItem('ali_vision_sk') || ''
+};
+
+/* 当前激活的API服务商：'aliyun_dashscope' | 'baidu' | 'aliyun_vision' */
+let ACTIVE_PROVIDER = localStorage.getItem('active_api_provider') || 'aliyun_dashscope';
+
 /* 食材关键词 → 食材对象的映射表 */
 const INGREDIENT_MAP = {
   // 主食类
@@ -185,6 +203,79 @@ async function baiduRecognize(imageBase64) {
   }
 }
 
+/**
+ * 调用阿里云百炼 DashScope 多模态识别
+ * 使用 qwen-vl 模型理解图片内容，提取食材信息
+ * @param {string} imageBase64 - 含 data:image 前缀的完整 data URI
+ * @returns {Promise<Array>} 识别结果 [{keyword, score}]
+ */
+async function dashscopeRecognize(imageDataUri) {
+  const key = ALICLOUD_CONFIG.dashscopeKey;
+  const model = ALICLOUD_CONFIG.dashscopeModel;
+  if (!key) return null;
+
+  const url = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+
+  const body = {
+    model: model,
+    input: {
+      messages: [{
+        role: 'user',
+        content: [
+          { image: imageDataUri },
+          { text: '请识别这张图片中所有可见的食物、食材和菜品。以JSON数组格式返回，每个元素包含 name(中文食材名称) 和 confidence(置信度0-1)。只返回JSON数组，不要其他内容。示例：[{"name":"番茄","confidence":0.95},{"name":"鸡蛋","confidence":0.88}]' }
+        ]
+      }]
+    },
+    parameters: { max_tokens: 1000 }
+  };
+
+  try {
+    console.log('[阿里云·百炼] 开始多模态识别, model:', model);
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + key,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+
+    if (data.code) {
+      console.error('[阿里云·百炼] API错误:', data.code, data.message);
+      return null;
+    }
+
+    // 从回复文本中提取 JSON 数组
+    const reply = data.output?.choices?.[0]?.message?.content?.[0]?.text;
+    if (!reply) {
+      console.error('[阿里云·百炼] 无回复内容');
+      return null;
+    }
+
+    console.log('[阿里云·百炼] 原始回复:', reply.substring(0, 200));
+
+    // 尝试从回复中提取JSON数组
+    const jsonMatch = reply.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.error('[阿里云·百炼] 未找到JSON数组');
+      return null;
+    }
+
+    const items = JSON.parse(jsonMatch[0]);
+    console.log('[阿里云·百炼] 解析出', items.length, '个食材');
+
+    return items.map(item => ({
+      keyword: item.name || item.keyword || '',
+      score: (item.confidence || item.score || 0.7)
+    }));
+  } catch (e) {
+    console.error('[阿里云·百炼] 识别失败:', e);
+    return null;
+  }
+}
+
 /* ── 徽章数据 ── */
 const ALL_BADGES = [
   { id: 'first_scan',    icon: '📷', name: '初次扫描',       desc: '第一次上传剩菜照片', earned: false },
@@ -314,16 +405,17 @@ function initFileInput() {
       img.src = evt.target.result;
       img.style.display = 'block';
       if (placeholder) placeholder.style.display = 'none';
-      // 提取纯base64（去掉 data:image/...;base64, 前缀）
-      const base64 = evt.target.result.split(',')[1];
-      startAiScan(base64);
+      // 提取纯base64（用于百度AI）和完整data URI（用于百炼）
+      const dataUri = evt.target.result;
+      const base64 = dataUri.split(',')[1];
+      startAiScan(base64, dataUri);
     };
     reader.readAsDataURL(file);
   });
 }
 
-/* ── AI扫描流程 ── */
-function startAiScan(imageBase64) {
+/* ── AI扫描流程（多API服务商） ── */
+function startAiScan(imageBase64, dataUri) {
   const loading = document.getElementById('aiLoading');
   const loadingText = document.getElementById('aiLoadingText');
   if (loading) loading.style.display = 'block';
@@ -346,7 +438,22 @@ function startAiScan(imageBase64) {
       }
     }, 1200);
 
-    baiduRecognize(imageBase64).then(results => {
+    // 根据当前激活的服务商选择识别函数
+    let recognizePromise;
+    const providerName = ACTIVE_PROVIDER === 'aliyun_dashscope' ? '阿里云·百炼'
+      : ACTIVE_PROVIDER === 'baidu' ? '百度AI'
+      : '阿里云·视觉智能';
+
+    console.log('[扫描] 使用服务商:', providerName);
+
+    if (ACTIVE_PROVIDER === 'aliyun_dashscope') {
+      recognizePromise = dashscopeRecognize(dataUri || ('data:image/jpeg;base64,' + imageBase64));
+    } else {
+      // baidu 或 aliyun_vision（目前仅百度支持，视觉智能预留）
+      recognizePromise = baiduRecognize(imageBase64);
+    }
+
+    recognizePromise.then(results => {
       clearInterval(msgInterval);
       if (loadingText) loadingText.textContent = msgs[msgs.length - 1];
 
@@ -354,22 +461,21 @@ function startAiScan(imageBase64) {
         if (loading) loading.style.display = 'none';
 
         if (results && results.length > 0) {
-          // 过滤低置信度结果（<15%）并只取前8个
           const filtered = results
-            .filter(r => r.score > 0.15)
+            .filter(r => r.score > (ACTIVE_PROVIDER === 'aliyun_dashscope' ? 0.4 : 0.15))
             .slice(0, 8);
 
           if (filtered.length > 0) {
             const ingredients = filtered.map(r => matchIngredient(r.keyword));
             showIngredientResults(ingredients);
-            addScore(50, '扫描食材');
+            addScore(50, 'AI扫描食材 (' + providerName + ')');
             return;
           }
         }
 
         // API无结果或失败，降级到演示数据
         showIngredientResults(DEMO_INGREDIENTS);
-        addScore(30, '扫描食材（演示）');
+        addScore(30, '扫描食材（演示降级）');
       }, 600);
     }).catch(() => {
       // API异常，降级
@@ -377,7 +483,7 @@ function startAiScan(imageBase64) {
       setTimeout(() => {
         if (loading) loading.style.display = 'none';
         showIngredientResults(DEMO_INGREDIENTS);
-        addScore(30, '扫描食材（演示）');
+        addScore(30, '扫描食材（演示降级）');
       }, 1500);
     });
   } else {
@@ -1001,18 +1107,52 @@ function openRecipeBook(e) {
   modal.style.display = 'flex';
 }
 
+/* ── 服务商切换 ── */
+function onProviderChange() {
+  const sel = document.getElementById('apiProviderSelect');
+  if (!sel) return;
+  ACTIVE_PROVIDER = sel.value;
+
+  // 切换配置面板显示
+  const dash = document.getElementById('dashscopeConfig');
+  const bai  = document.getElementById('baiduConfig');
+  const vis  = document.getElementById('aliyunVisionConfig');
+  if (dash) dash.style.display = ACTIVE_PROVIDER === 'aliyun_dashscope' ? 'block' : 'none';
+  if (bai)  bai.style.display  = ACTIVE_PROVIDER === 'baidu' ? 'block' : 'none';
+  if (vis)  vis.style.display  = ACTIVE_PROVIDER === 'aliyun_vision' ? 'block' : 'none';
+
+  updateApiStatus();
+}
+
 /* ── 设置弹窗 ── */
 function openSettings(e) {
   if (e) e.preventDefault();
   const modal = document.getElementById('settingsModal');
   if (modal) modal.style.display = 'flex';
 
-  // 回填已保存的API密钥
+  // 回填当前服务商选择
+  const sel = document.getElementById('apiProviderSelect');
+  if (sel) sel.value = ACTIVE_PROVIDER;
+
+  // 回填阿里云百炼密钥
+  const dsInput = document.getElementById('dashscopeKeyInput');
+  if (dsInput) dsInput.value = ALICLOUD_CONFIG.dashscopeKey;
+  const modelSel = document.getElementById('dashscopeModelSelect');
+  if (modelSel) modelSel.value = ALICLOUD_CONFIG.dashscopeModel;
+
+  // 回填百度密钥
   const apiInput = document.getElementById('apiKeyInput');
   const secretInput = document.getElementById('secretKeyInput');
   if (apiInput) apiInput.value = BAIDU_CONFIG.apiKey;
   if (secretInput) secretInput.value = BAIDU_CONFIG.secretKey;
-  updateApiStatus();
+
+  // 回填阿里云视觉智能密钥
+  const akInput = document.getElementById('aliyunAkInput');
+  const skInput = document.getElementById('aliyunSkInput');
+  if (akInput) akInput.value = ALICLOUD_CONFIG.visionAk;
+  if (skInput) skInput.value = ALICLOUD_CONFIG.visionSk;
+
+  onProviderChange();
 }
 
 function saveSettings() {
@@ -1022,7 +1162,27 @@ function saveSettings() {
     if (nameEl) nameEl.textContent = nickInput.value;
   }
 
-  // 保存API密钥
+  // 保存服务商选择
+  if (ACTIVE_PROVIDER) {
+    localStorage.setItem('active_api_provider', ACTIVE_PROVIDER);
+  }
+
+  // 保存阿里云百炼密钥
+  const dsInput = document.getElementById('dashscopeKeyInput');
+  if (dsInput && dsInput.value.trim()) {
+    localStorage.setItem('ali_dashscope_key', dsInput.value.trim());
+    ALICLOUD_CONFIG.dashscopeKey = dsInput.value.trim();
+  } else {
+    localStorage.removeItem('ali_dashscope_key');
+    ALICLOUD_CONFIG.dashscopeKey = ALICLOUD_DEFAULTS.dashscopeKey;
+  }
+  const modelSel = document.getElementById('dashscopeModelSelect');
+  if (modelSel) {
+    localStorage.setItem('ali_dashscope_model', modelSel.value);
+    ALICLOUD_CONFIG.dashscopeModel = modelSel.value;
+  }
+
+  // 保存百度密钥
   const apiInput = document.getElementById('apiKeyInput');
   const secretInput = document.getElementById('secretKeyInput');
   if (apiInput && apiInput.value.trim()) {
@@ -1039,10 +1199,26 @@ function saveSettings() {
     localStorage.removeItem('baidu_secret_key');
     BAIDU_CONFIG.secretKey = BAIDU_DEFAULTS.secretKey;
   }
-
-  // 清除旧的 token（密钥变更后需要重新获取）
   BAIDU_CONFIG.accessToken = null;
   BAIDU_CONFIG.tokenExpiry = 0;
+
+  // 保存阿里云视觉智能密钥
+  const akInput = document.getElementById('aliyunAkInput');
+  const skInput = document.getElementById('aliyunSkInput');
+  if (akInput && akInput.value.trim()) {
+    localStorage.setItem('ali_vision_ak', akInput.value.trim());
+    ALICLOUD_CONFIG.visionAk = akInput.value.trim();
+  } else {
+    localStorage.removeItem('ali_vision_ak');
+    ALICLOUD_CONFIG.visionAk = '';
+  }
+  if (skInput && skInput.value.trim()) {
+    localStorage.setItem('ali_vision_sk', skInput.value.trim());
+    ALICLOUD_CONFIG.visionSk = skInput.value.trim();
+  } else {
+    localStorage.removeItem('ali_vision_sk');
+    ALICLOUD_CONFIG.visionSk = '';
+  }
 
   const modal = document.getElementById('settingsModal');
   if (modal) modal.style.display = 'none';
@@ -1056,58 +1232,88 @@ function toggleApiKeyVisibility(inputId) {
   input.type = (input.type === 'password') ? 'text' : 'password';
 }
 
-/* ── 测试API连接 ── */
+/* ── 测试API连接（多服务商） ── */
 async function testApiConnection() {
-  const apiInput = document.getElementById('apiKeyInput');
-  const secretInput = document.getElementById('secretKeyInput');
   const statusEl = document.getElementById('apiStatusText');
-
-  const apiKey = (apiInput && apiInput.value.trim()) || BAIDU_DEFAULTS.apiKey;
-  const secretKey = (secretInput && secretInput.value.trim()) || BAIDU_DEFAULTS.secretKey;
-
   if (statusEl) {
-    statusEl.textContent = '⏳ 正在测试连接...';
+    statusEl.textContent = '⏳ 正在测试 ' + (ACTIVE_PROVIDER === 'aliyun_dashscope' ? '阿里云百炼' : ACTIVE_PROVIDER === 'baidu' ? '百度AI' : '阿里云视觉智能') + ' 连接...';
     statusEl.className = 'api-status-text testing';
   }
 
-  try {
-    const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
-    const resp = await fetch(url, { method: 'POST' });
-    const data = await resp.json();
-
-    if (data.access_token) {
-      if (statusEl) {
-        statusEl.textContent = '✅ 连接成功！API 密钥有效';
-        statusEl.className = 'api-status-text success';
+  if (ACTIVE_PROVIDER === 'aliyun_dashscope') {
+    // 测试百炼连接
+    const dsInput = document.getElementById('dashscopeKeyInput');
+    const key = (dsInput && dsInput.value.trim()) || ALICLOUD_DEFAULTS.dashscopeKey;
+    try {
+      const resp = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen-vl-plus',
+          input: { messages: [{ role: 'user', content: [{ text: '回复"OK"' }] }] },
+          parameters: { max_tokens: 10 }
+        })
+      });
+      const data = await resp.json();
+      if (data.code) throw new Error(data.message || '认证失败');
+      if (statusEl) { statusEl.textContent = '✅ 阿里云百炼连接成功！'; statusEl.className = 'api-status-text success'; }
+      showToast('✅ 阿里云百炼连接成功！');
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = '❌ 百炼连接失败：' + e.message; statusEl.className = 'api-status-text error'; }
+      showToast('❌ 百炼连接失败，请检查Key');
+    }
+  } else if (ACTIVE_PROVIDER === 'baidu') {
+    // 测试百度连接
+    const apiInput = document.getElementById('apiKeyInput');
+    const secretInput = document.getElementById('secretKeyInput');
+    const apiKey = (apiInput && apiInput.value.trim()) || BAIDU_DEFAULTS.apiKey;
+    const secretKey = (secretInput && secretInput.value.trim()) || BAIDU_DEFAULTS.secretKey;
+    try {
+      const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
+      const resp = await fetch(url, { method: 'POST' });
+      const data = await resp.json();
+      if (data.access_token) {
+        if (statusEl) { statusEl.textContent = '✅ 百度AI连接成功！'; statusEl.className = 'api-status-text success'; }
+        showToast('✅ 百度AI连接成功！');
+      } else {
+        throw new Error(data.error_description || '认证失败');
       }
-      showToast('✅ 百度AI连接成功！');
-    } else {
-      throw new Error(data.error_description || '认证失败');
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = '❌ 百度连接失败：' + e.message; statusEl.className = 'api-status-text error'; }
+      showToast('❌ 百度连接失败，请检查密钥');
     }
-  } catch (e) {
-    if (statusEl) {
-      statusEl.textContent = '❌ 连接失败：' + (e.message || '未知错误');
-      statusEl.className = 'api-status-text error';
-    }
-    showToast('❌ 连接失败，请检查密钥');
+  } else {
+    // 阿里云视觉智能（预留）
+    if (statusEl) { statusEl.textContent = '⚠️ 视觉智能需AK/SK签名，建议先用百炼模式'; statusEl.className = 'api-status-text'; }
+    showToast('⚠️ 视觉智能模式暂不支持前端直接调用');
   }
 }
 
 /* ── 清除密钥（恢复默认） ── */
 function clearApiKeys() {
-  localStorage.removeItem('baidu_api_key');
-  localStorage.removeItem('baidu_secret_key');
+  ['ali_dashscope_key', 'ali_dashscope_model', 'baidu_api_key', 'baidu_secret_key', 'ali_vision_ak', 'ali_vision_sk', 'active_api_provider'].forEach(k => localStorage.removeItem(k));
+
+  ACTIVE_PROVIDER = 'aliyun_dashscope';
+  ALICLOUD_CONFIG.dashscopeKey = ALICLOUD_DEFAULTS.dashscopeKey;
+  ALICLOUD_CONFIG.dashscopeModel = ALICLOUD_DEFAULTS.dashscopeModel;
+  ALICLOUD_CONFIG.visionAk = '';
+  ALICLOUD_CONFIG.visionSk = '';
   BAIDU_CONFIG.apiKey = BAIDU_DEFAULTS.apiKey;
   BAIDU_CONFIG.secretKey = BAIDU_DEFAULTS.secretKey;
   BAIDU_CONFIG.accessToken = null;
   BAIDU_CONFIG.tokenExpiry = 0;
 
-  const apiInput = document.getElementById('apiKeyInput');
-  const secretInput = document.getElementById('secretKeyInput');
-  if (apiInput) apiInput.value = '';
-  if (secretInput) secretInput.value = '';
+  // 清空界面
+  ['dashscopeKeyInput', 'apiKeyInput', 'secretKeyInput', 'aliyunAkInput', 'aliyunSkInput'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const sel = document.getElementById('apiProviderSelect');
+  if (sel) sel.value = 'aliyun_dashscope';
+  const modelSel = document.getElementById('dashscopeModelSelect');
+  if (modelSel) modelSel.value = 'qwen-vl-plus';
+  onProviderChange();
 
-  document.getElementById('apiStatusText').textContent = '已恢复默认密钥';
+  document.getElementById('apiStatusText').textContent = '📋 已恢复默认（阿里云百炼）';
   document.getElementById('apiStatusText').className = 'api-status-text';
   showToast('🗑️ 密钥已清除，恢复默认');
 }
@@ -1116,9 +1322,17 @@ function clearApiKeys() {
 function updateApiStatus() {
   const statusEl = document.getElementById('apiStatusText');
   if (!statusEl) return;
-  const apiInput = document.getElementById('apiKeyInput');
-  const hasCustom = apiInput && apiInput.value.trim() && apiInput.value.trim() !== BAIDU_DEFAULTS.apiKey;
-  statusEl.textContent = hasCustom ? '🔐 使用自定义密钥' : '📋 使用默认密钥（可在此替换为你自己的）';
+  if (ACTIVE_PROVIDER === 'aliyun_dashscope') {
+    const dsInput = document.getElementById('dashscopeKeyInput');
+    const hasCustom = dsInput && dsInput.value.trim() && dsInput.value.trim() !== ALICLOUD_DEFAULTS.dashscopeKey;
+    statusEl.textContent = hasCustom ? '🔐 阿里云百炼 · 自定义Key' : '📋 阿里云百炼 · 默认Key已预填';
+  } else if (ACTIVE_PROVIDER === 'baidu') {
+    const apiInput = document.getElementById('apiKeyInput');
+    const hasCustom = apiInput && apiInput.value.trim() && apiInput.value.trim() !== BAIDU_DEFAULTS.apiKey;
+    statusEl.textContent = hasCustom ? '🔐 百度AI · 自定义密钥' : '📋 百度AI · 默认密钥';
+  } else {
+    statusEl.textContent = '⚠️ 阿里云视觉智能 · 需AK/SK';
+  }
   statusEl.className = 'api-status-text';
 }
 

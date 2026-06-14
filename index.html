@@ -381,6 +381,29 @@
           <label>游客模式</label>
           <button class="pixel-btn secondary-btn" onclick="toggleGuestMode()">迁移账户</button>
         </div>
+
+        <!-- ── API 接口配置 ── -->
+        <div class="settings-divider">
+          <span class="divider-label">🔌 API 接口配置</span>
+        </div>
+        <div class="setting-row">
+          <label>百度AI · API Key</label>
+          <input type="password" id="apiKeyInput" class="pixel-input" placeholder="输入你的百度AI API Key" autocomplete="off">
+          <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('apiKeyInput')" style="margin-top:6px">👁️</button>
+        </div>
+        <div class="setting-row">
+          <label>百度AI · Secret Key</label>
+          <input type="password" id="secretKeyInput" class="pixel-input" placeholder="输入你的百度AI Secret Key" autocomplete="off">
+          <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('secretKeyInput')" style="margin-top:6px">👁️</button>
+        </div>
+        <div class="setting-row" style="flex-direction:row; gap:10px;">
+          <button class="pixel-btn accent-btn" onclick="testApiConnection()">🔍 测试连接</button>
+          <button class="pixel-btn secondary-btn" onclick="clearApiKeys()">🗑️ 清除密钥</button>
+        </div>
+        <div class="setting-row">
+          <span class="api-status-text" id="apiStatusText">未配置密钥</span>
+        </div>
+
         <button class="pixel-btn primary-btn" onclick="saveSettings()">💾 保存设置</button>
       </div>
     </div>

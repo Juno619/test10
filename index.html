@@ -387,21 +387,64 @@
           <span class="divider-label">🔌 API 接口配置</span>
         </div>
         <div class="setting-row">
-          <label>百度AI · API Key</label>
-          <input type="password" id="apiKeyInput" class="pixel-input" placeholder="输入你的百度AI API Key" autocomplete="off">
-          <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('apiKeyInput')" style="margin-top:6px">👁️</button>
+          <label>识别服务商</label>
+          <select id="apiProviderSelect" class="pixel-select" onchange="onProviderChange()">
+            <option value="aliyun_dashscope">阿里云 · 百炼(DashScope)</option>
+            <option value="baidu">百度AI</option>
+            <option value="aliyun_vision">阿里云 · 视觉智能</option>
+          </select>
         </div>
-        <div class="setting-row">
-          <label>百度AI · Secret Key</label>
-          <input type="password" id="secretKeyInput" class="pixel-input" placeholder="输入你的百度AI Secret Key" autocomplete="off">
-          <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('secretKeyInput')" style="margin-top:6px">👁️</button>
+
+        <!-- 阿里云百炼配置 -->
+        <div id="dashscopeConfig">
+          <div class="setting-row">
+            <label>百炼 · API Key</label>
+            <input type="password" id="dashscopeKeyInput" class="pixel-input" placeholder="sk-xxxxxxxx" autocomplete="off">
+            <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('dashscopeKeyInput')" style="margin-top:6px">👁️</button>
+          </div>
+          <div class="setting-row">
+            <label>识别模型</label>
+            <select id="dashscopeModelSelect" class="pixel-select">
+              <option value="qwen-vl-plus">qwen-vl-plus（推荐）</option>
+              <option value="qwen-vl-max">qwen-vl-max（高精度）</option>
+            </select>
+          </div>
         </div>
+
+        <!-- 百度AI配置 -->
+        <div id="baiduConfig" style="display:none">
+          <div class="setting-row">
+            <label>百度AI · API Key</label>
+            <input type="password" id="apiKeyInput" class="pixel-input" placeholder="输入你的百度AI API Key" autocomplete="off">
+            <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('apiKeyInput')" style="margin-top:6px">👁️</button>
+          </div>
+          <div class="setting-row">
+            <label>百度AI · Secret Key</label>
+            <input type="password" id="secretKeyInput" class="pixel-input" placeholder="输入你的百度AI Secret Key" autocomplete="off">
+            <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('secretKeyInput')" style="margin-top:6px">👁️</button>
+          </div>
+        </div>
+
+        <!-- 阿里云视觉智能配置 -->
+        <div id="aliyunVisionConfig" style="display:none">
+          <div class="setting-row">
+            <label>AccessKey ID</label>
+            <input type="password" id="aliyunAkInput" class="pixel-input" placeholder="LTAI5t..." autocomplete="off">
+            <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('aliyunAkInput')" style="margin-top:6px">👁️</button>
+          </div>
+          <div class="setting-row">
+            <label>AccessKey Secret</label>
+            <input type="password" id="aliyunSkInput" class="pixel-input" placeholder="输入Secret" autocomplete="off">
+            <button class="pixel-btn-small" onclick="toggleApiKeyVisibility('aliyunSkInput')" style="margin-top:6px">👁️</button>
+          </div>
+        </div>
+
         <div class="setting-row" style="flex-direction:row; gap:10px;">
           <button class="pixel-btn accent-btn" onclick="testApiConnection()">🔍 测试连接</button>
           <button class="pixel-btn secondary-btn" onclick="clearApiKeys()">🗑️ 清除密钥</button>
         </div>
         <div class="setting-row">
-          <span class="api-status-text" id="apiStatusText">未配置密钥</span>
+          <span class="api-status-text" id="apiStatusText">📋 使用阿里云百炼（默认密钥已预填）</span>
         </div>
 
         <button class="pixel-btn primary-btn" onclick="saveSettings()">💾 保存设置</button>

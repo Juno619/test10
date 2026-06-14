@@ -1491,7 +1491,9 @@ h1,h2,h3,h4,p,ul,ol { margin: 0; padding: 0; }
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .setting-row {
@@ -1517,6 +1519,23 @@ h1,h2,h3,h4,p,ul,ol { margin: 0; padding: 0; }
 }
 
 .pixel-input:focus { border-color: var(--yellow); }
+
+.pixel-select {
+  background: var(--panel-2);
+  border: 2px solid var(--wood-mid);
+  color: var(--ink);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  outline: none;
+  width: 200px;
+  cursor: pointer;
+  appearance: auto;
+}
+.pixel-select:focus { border-color: var(--yellow); }
+
+/* provider配置区块切换 */
+.api-config-block { margin: 2px 0; }
 
 /* API 配置区 */
 .settings-divider {
